@@ -27,6 +27,10 @@ from app.schemas.pagamento import (
 # Por enquanto, deixamos como constante para manter o foco no aprendizado.
 TAXA_JUROS_MENSAL = Decimal("0.02")  # 2% ao mês (juros simples)
 
+# Limite máximo de parcelas SEM juros no cartão de crédito.
+# Regra de negócio: 1x, 2x e 3x não cobram juros.
+PARCELAS_SEM_JUROS_MAX = 3
+
 # Métodos que NÃO permitem parcelamento (sempre à vista).
 METODOS_SEM_PARCELAMENTO = {MetodoPagamento.PIX, MetodoPagamento.BOLETO}
 
@@ -72,10 +76,11 @@ def _calcular_juros(valor_total: Decimal, parcelas: int, metodo: MetodoPagamento
     """
     Calcula o valor total de juros do pagamento.
 
-    Regras:
-    - À vista (parcelas == 1): sem juros, retorna 0.
+    Regras de negócio atuais:
+    - Parcelas de 1 a 3 (PARCELAS_SEM_JUROS_MAX): sem juros, retorna 0.
     - PIX ou Boleto: sem juros (já validamos que sempre será à vista).
-    - Cartão parcelado: juros simples = valor × taxa × parcelas.
+    - Cartão de crédito com 4 a 12 parcelas: juros simples =
+      valor × TAXA_JUROS_MENSAL × parcelas.
 
     Args:
         valor_total: Valor original da compra.
@@ -83,9 +88,9 @@ def _calcular_juros(valor_total: Decimal, parcelas: int, metodo: MetodoPagamento
         metodo: Método de pagamento.
 
     Returns:
-        Valor total de juros a ser aplicado (já arredondado).
+        Valor total de juros a ser aplicado (já arredondado em centavos).
     """
-    if parcelas == 1 or metodo != MetodoPagamento.CARTAO_CREDITO:
+    if parcelas <= PARCELAS_SEM_JUROS_MAX or metodo != MetodoPagamento.CARTAO_CREDITO:
         return Decimal("0.00")
 
     juros = valor_total * TAXA_JUROS_MENSAL * Decimal(parcelas)
