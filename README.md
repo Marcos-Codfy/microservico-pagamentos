@@ -11,7 +11,8 @@ desenvolvido para explorar:
 
 - Arquitetura limpa (separação em camadas).
 - Validação de dados com Pydantic.
-- Testes unitários com pytest.
+- Testes unitários com pytest aplicando BVA, Equivalence Partitioning
+  e Decision Table.
 
 ## 🛠️ Tecnologias
 
@@ -90,9 +91,27 @@ Saída esperada:
 tests/test_calculadora.py::test_cartao_a_vista_nao_aplica_juros PASSED
 tests/test_calculadora.py::test_cartao_12x_aplica_juros_no_limite_maximo PASSED
 tests/test_calculadora.py::test_pix_parcelado_lanca_pagamento_invalido_error PASSED
+tests/test_calculadora.py::test_cartao_3x_nao_aplica_juros PASSED
+tests/test_calculadora.py::test_cartao_4x_aplica_juros PASSED
+tests/test_calculadora.py::test_pix_a_vista_processa_normalmente PASSED
+tests/test_calculadora.py::test_boleto_a_vista_processa_normalmente PASSED
+tests/test_calculadora.py::test_boleto_parcelado_lanca_pagamento_invalido_error PASSED
+tests/test_calculadora.py::test_cartao_com_valor_decimal_calcula_corretamente PASSED
+tests/test_calculadora.py::test_arredondamento_aplica_round_half_up PASSED
 
-============================== 3 passed ==============================
+============================== 10 passed ==============================
 ```
+
+### Estratégia de cobertura
+
+Os testes aplicam três técnicas formais de teste caixa-preta:
+
+- **Boundary Value Analysis (BVA):** testa os limites onde a regra
+  muda de comportamento (1x, 3x, 4x, 12x).
+- **Equivalence Partitioning:** cobre uma representante de cada
+  família de método (cartão, PIX, boleto).
+- **Decision Table:** combina método × faixa de parcelas garantindo
+  que nenhum cenário escape (válido ou inválido).
 
 ## 📐 Endpoints
 
@@ -101,7 +120,7 @@ tests/test_calculadora.py::test_pix_parcelado_lanca_pagamento_invalido_error PAS
 | GET    | `/health`     | Verifica se a aplicação está no ar | 200 OK            |
 | POST   | `/pagamentos/`| Cria um novo pagamento          | 201 Created       |
 
-### Exemplo: criar pagamento (cartão parcelado)
+### Exemplo: cartão em 3x (dentro da faixa sem juros)
 
 **Request:**
 
@@ -111,7 +130,7 @@ POST /pagamentos/
   "valor_total": 1000.00,
   "parcelas": 3,
   "metodo": "cartao_credito",
-  "descricao": "Compra teste"
+  "descricao": "Cartão 3x sem juros"
 }
 ```
 
@@ -121,13 +140,43 @@ POST /pagamentos/
 {
   "id": "a37740a8-b71c-447b-bc77-4516418093e0",
   "valor_total": "1000.00",
-  "valor_parcela": "353.33",
+  "valor_parcela": "333.33",
   "parcelas": 3,
-  "juros_aplicado": "60.00",
-  "valor_final": "1060.00",
+  "juros_aplicado": "0.00",
+  "valor_final": "1000.00",
   "metodo": "cartao_credito",
   "status": "aprovado",
-  "criado_em": "2026-06-02T17:30:00.123456Z"
+  "criado_em": "2026-06-09T17:30:00.123456Z"
+}
+```
+
+### Exemplo: cartão em 4x (primeira faixa com juros)
+
+**Request:**
+
+```json
+POST /pagamentos/
+{
+  "valor_total": 1000.00,
+  "parcelas": 4,
+  "metodo": "cartao_credito",
+  "descricao": "Cartão 4x com juros"
+}
+```
+
+**Response (201 Created):**
+
+```json
+{
+  "id": "b8c9d10e-f1g2-3h4i-5j6k-7l8m9n0o1p2q",
+  "valor_total": "1000.00",
+  "valor_parcela": "270.00",
+  "parcelas": 4,
+  "juros_aplicado": "80.00",
+  "valor_final": "1080.00",
+  "metodo": "cartao_credito",
+  "status": "aprovado",
+  "criado_em": "2026-06-09T17:30:00.123456Z"
 }
 ```
 
@@ -155,9 +204,13 @@ POST /pagamentos/
 
 ## 📚 Regras de Negócio
 
-- **Cartão de crédito 1x:** sem juros.
-- **Cartão de crédito 2x a 12x:** juros simples de 2% ao mês.
-- **PIX e Boleto:** somente à vista (1 parcela).
+- **Cartão de crédito 1x, 2x e 3x:** sem juros.
+- **Cartão de crédito 4x a 12x:** juros simples de 2% ao mês
+  (`juros = valor × 0,02 × parcelas`).
+- **PIX e Boleto:** somente à vista (1 parcela). Tentar parcelar
+  retorna HTTP 422 com mensagem da regra violada.
+- **Arredondamento monetário:** `ROUND_HALF_UP` em duas casas decimais
+  (padrão contábil brasileiro).
 - **Validações automáticas (Pydantic):**
   - `valor_total > 0`
   - `1 ≤ parcelas ≤ 12`
