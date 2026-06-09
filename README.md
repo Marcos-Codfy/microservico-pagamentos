@@ -216,6 +216,40 @@ POST /pagamentos/
   - `1 ≤ parcelas ≤ 12`
   - `descricao` entre 3 e 200 caracteres
 
+
+## 🐳 Como subir o ambiente (Docker)
+
+O projeto usa 3 containers orquestrados via `docker-compose`:
+
+| Container | Porta (host) | Função |
+|---|---|---|
+| `postgres_prod` | 5432 | Banco de dados de produção (persistente) |
+| `postgres_test` | 5433 | Banco de testes (em RAM, auto-limpa) |
+| `fake_gateway` | 8001 | Simula gateway de pagamento externo |
+
+### Pré-requisitos
+- Docker Desktop instalado e rodando
+- Arquivo `.env` criado a partir do `.env.example`
+
+### Subir todos os containers
+```bash
+docker compose up -d --build
+```
+
+### Verificar status
+```bash
+docker compose ps
+```
+
+### Acessar o fake-gateway
+- Swagger: http://localhost:8001/docs
+- Health: http://localhost:8001/health
+
+### Derrubar tudo
+```bash
+docker compose down
+```
+
 ## 👤 Autor
 
 **Marcos Vinicius Muniz Arruda**  
