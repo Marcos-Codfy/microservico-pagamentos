@@ -8,6 +8,17 @@ Executar com: uvicorn app.main:app --reload
 """
 from fastapi import FastAPI
 from app.api.routes_pagamento import router as pagamento_router
+from app.db import models  # noqa: F401 — necessário pra registrar PagamentoDB no metadata
+from app.db.database import Base, engine
+
+# Cria as tabelas registradas em Base.metadata no banco apontado pelo engine.
+# Como o import de `models` acima já registrou PagamentoDB, esta chamada
+# cria a tabela `pagamentos` se ela ainda não existir.
+#
+# Princípio: idempotência — rodar várias vezes não quebra nada. Se a tabela
+# já existe, o SQLAlchemy simplesmente ignora.
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Microserviço de Pagamentos",
