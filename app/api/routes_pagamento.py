@@ -1,54 +1,84 @@
 """
 Rotas HTTP do domínio de pagamento.
-
-Esta é a "camada externa" da aplicação (Clean Architecture).
-Responsabilidades:
-- Receber requisições HTTP e validar entrada (delegado ao Pydantic).
-- Chamar a lógica de negócio na camada `core`.
-- TRADUZIR exceções de domínio em respostas HTTP apropriadas.
-
-O que esta camada NÃO faz:
-- Não contém regras de negócio (essas vivem em `core/calculadora.py`).
-- Não conhece detalhes de persistência (não importa banco de dados).
-- Não calcula juros, parcelas, etc.
-
-Princípio aplicado: Anti-Corruption Layer — isolamos o núcleo
-(domínio) das bordas técnicas (HTTP, framework).
 """
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.core.calculadora import processar_pagamento
-from app.core.exceptions import PagamentoInvalidoError
+from app.core.exceptions import (
+    GatewayIndisponivelError,
+    GatewayRecusouPagamentoError,
+    PagamentoInvalidoError,
+)
+from app.db.database import get_db
+from app.db.repositorio import buscar_pagamento_por_id, salvar_pagamento
+from app.gateway.cliente import autorizar_pagamento
 from app.schemas.pagamento import PagamentoRequest, PagamentoResponse
 
-# prefix="/pagamentos" → todas as rotas deste router começam com /pagamentos
-# tags=["pagamentos"]  → agrupa as rotas na documentação Swagger
 router = APIRouter(prefix="/pagamentos", tags=["pagamentos"])
+
 
 @router.post(
     "/",
     response_model=PagamentoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Cria um novo Pagamento",
-    description="Processa um pedido de pagamento aplicando regras de juros e parcelamento.",
+    description="Processa um pedido de pagamento, persiste no banco e devolve o resultado.",
 )
-def criar_pagamento(request: PagamentoRequest) -> PagamentoResponse:
-    """
-    Endpoint POST /pagamentos.
-
-    Fluxo:
-    1. FastAPI valida o JSON de entrada contra o schema `PagamentoRequest`
-       (Pydantic). Se inválido → 422 automático.
-    2. Chamamos a calculadora pura na camada `core`.
-    3. Se a calculadora lançar `PagamentoInvalidoError` (regra de negócio
-       violada), traduzimos para HTTP 422 com a mensagem da exceção.
-    4. Se tudo der certo, devolvemos `PagamentoResponse` com status 201.
-    """
+def criar_pagamento(
+    request: PagamentoRequest,
+    db: Session = Depends(get_db),
+) -> PagamentoResponse:
+    """POST /pagamentos — calcula + persiste."""
     try:
-        return processar_pagamento(request)
+        resposta = processar_pagamento(request)
     except PagamentoInvalidoError as erro:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(erro),
         )
+
+    # 2. Autoriza no gateway externo (chamada HTTP com timeout).
+    # Falha aqui = nada vai pro banco. Banco só guarda autorizado.
+
+    try:
+        autorizar_pagamento(resposta.valor_final, resposta.metodo.value)
+    except GatewayRecusouPagamentoError as erro:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=str(erro),
+        )
+    except GatewayIndisponivelError as erro:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(erro),
+        )
+
+    "Salva no Banco"
+    salvar_pagamento(db, resposta, request.descricao)
+    return resposta
+
+
+@router.get(
+    "/{pagamento_id}",
+    response_model=PagamentoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Busca um pagamento pelo ID",
+    description="Retorna os dados de um pagamento previamente persistido.",
+)
+def obter_pagamento(
+    pagamento_id: UUID,
+    db: Session = Depends(get_db),
+) -> PagamentoResponse:
+    """GET /pagamentos/{id} — busca pelo UUID, 404 se não achar."""
+    pagamento_db = buscar_pagamento_por_id(db, pagamento_id)
+
+    if pagamento_db is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pagamento não encontrado",
+        )
+
+    return PagamentoResponse.model_validate(pagamento_db)
