@@ -14,7 +14,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class MetodoPagamento(str, Enum):
@@ -88,6 +88,8 @@ class PagamentoResponse(BaseModel):
     - status: resultado do processamento
     - criado_em: timestamp UTC de criação (auditoria)
     """
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID = Field(
         default_factory=uuid4,
         description="Identificador único da transação.",
