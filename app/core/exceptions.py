@@ -40,3 +40,34 @@ class PagamentoInvalidoError(PagamentoError):
     diferente de um pagamento que foi tentado e recusado.
     """
     pass
+
+
+class GatewayError(PagamentoError):
+    """
+    Base para erros de comunicação ou recusa do gateway externo
+
+    Permite a camada de rota capturar qualquer erro de gateway
+    com um unico 'except Gateway'
+    """
+    pass
+
+class GatewayIndisponivelError(GatewayError):
+    """
+    Lançada quando o gateway externo está fora do ar, deu timeout
+    ou respondeu com 5xx
+
+    Traduz-se em HTTP 503 (Service Unavailable) na camada de rota -
+    sinaliza "não é culpa nossa, é da dependencia"
+    """
+    pass
+
+
+class GatewayRecusouPagamentoError(GatewayError):
+    """
+    Lançada quando o gateay respondeu mas se recusou a autorizar o
+    pagamento (cartão sem saldo, fraude detectada, etc.).
+
+    Traduz-se HTTP 402 (Payment Required) na camada de rota.
+    """
+
+    pass
