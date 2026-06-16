@@ -1,49 +1,89 @@
-# ============================================
-# Pipeline de Integração Contínua (CI)
-# Microserviço de Pagamentos
-# ============================================
-# Este workflow é executado automaticamente pelo GitHub Actions
-# a cada push ou pull request na branch main.
-#
-# Objetivo: garantir que todos os testes unitários continuam
-# passando antes de qualquer código ser integrado.
-
 name: CI - Microserviço de Pagamentos
 
 # Eventos que disparam o pipeline
 on:
-  # Quando alguém faz push na main
+  # Quando alguém faz push em main ou em qualquer branch que comece com feature/
   push:
-    branches: [main]
+    branches:
+      - main
+      - "feature/**"
   # Quando alguém abre um pull request mirando a main
   pull_request:
     branches: [main]
 
 # Definição dos jobs (tarefas) do workflow
 jobs:
-  # Único job deste pipeline: rodar testes
+  # Único job deste pipeline: rodar testes de unidade + integração com cobertura
   test:
-    name: Rodar testes unitários
+    name: Rodar testes com cobertura
     runs-on: ubuntu-latest  # Máquina virtual Linux fornecida pelo GitHub
 
+    # Serviços auxiliares: containers que sobem JUNTO com o job e somem no fim.
+    # Aqui pedimos um Postgres dedicado pros testes de integração rodarem
+    # contra um banco real (não SQLite) — mesma engine usada em produção.
+    services:
+      postgres:
+        image: postgres:16-alpine  # Mesma versão que usamos no docker-compose
+        env:
+          # Credenciais do Postgres do CI (não são as de prod do projeto)
+          POSTGRES_USER: pagamentos
+          POSTGRES_PASSWORD: pagamentos
+          POSTGRES_DB: pagamentos_test
+        ports:
+          # Porta interna 5432 do container → exposta como 5433 no runner.
+          # Bate com a porta do nosso banco de teste local.
+          - 5433:5432
+        # Healthcheck: GitHub Actions só começa os steps quando o Postgres
+        # responder OK. Evita teste rodar antes do banco subir.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-      # Passo 1: Baixa o código do repositório para dentro do runner
+      # Passo 1: Baixa o código do repositório para dentro do runner (a VM Ubuntu)
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # Passo 2: Instala o Python 3.12 no runner
+      # Passo 2: Instala o Python 3.12 no runner com cache do pip
       - name: Configurar Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'  # Acelera execuções futuras cacheando dependências
 
-      # Passo 3: Instala as dependências do projeto
-      - name: Instalar dependências
+      # Passo 3: Instala as dependências da aplicação principal
+      - name: Instalar dependências da aplicação
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Passo 4: Executa os testes com pytest
-      - name: Rodar testes com pytest
-        run: pytest -v
+      # Passo 4: Instala as dependências do fake_gateway (FastAPI + uvicorn)
+      # Esses pacotes ficam num requirements separado dentro da pasta fake_gateway
+      - name: Instalar dependências do fake_gateway
+        run: pip install -r fake_gateway/requirements.txt
+
+      # Passo 5: Sobe o fake_gateway em background, na porta 8001
+      # - "nohup ... &" deixa o processo rodando depois do step terminar
+      # - "sleep 3" dá tempo do uvicorn subir antes de bater no /health
+      # - "curl -f" falha o step se o gateway não responder OK (fail-fast)
+      - name: Subir fake_gateway em background
+        run: |
+          cd fake_gateway
+          nohup uvicorn main:app --port 8001 > /tmp/gateway.log 2>&1 &
+          sleep 3
+          curl -f http://localhost:8001/health
+
+      # Passo 6: Roda os testes com cobertura e Quality Gate
+      # - DATABASE_URL_* apontam pro Postgres do service acima
+      # - GATEWAY_URL aponta pro fake_gateway que subiu no passo 5
+      # - --cov=app  → mede cobertura da pasta app/
+      # - --cov-report=term-missing → mostra quais linhas NÃO foram testadas
+      # - --cov-fail-under=70 → Quality Gate: se cobertura < 70%, CI falha
+      - name: Rodar testes com pytest e cobertura
+        env:
+          DATABASE_URL_PROD: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
+          DATABASE_URL_TEST: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
+          GATEWAY_URL: http://localhost:8001
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70 -v
