@@ -7,9 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.calculadora import processar_pagamento
-from app.core.exceptions import PagamentoInvalidoError
+from app.core.exceptions import (
+    GatewayIndisponivelError,
+    GatewayRecusouPagamentoError,
+    PagamentoInvalidoError,
+)
 from app.db.database import get_db
 from app.db.repositorio import buscar_pagamento_por_id, salvar_pagamento
+from app.gateway.cliente import autorizar_pagamento
 from app.schemas.pagamento import PagamentoRequest, PagamentoResponse
 
 router = APIRouter(prefix="/pagamentos", tags=["pagamentos"])
@@ -35,6 +40,23 @@ def criar_pagamento(
             detail=str(erro),
         )
 
+    # 2. Autoriza no gateway externo (chamada HTTP com timeout).
+    # Falha aqui = nada vai pro banco. Banco só guarda autorizado.
+
+    try:
+        autorizar_pagamento(resposta.valor_final, resposta.metodo.value)
+    except GatewayRecusouPagamentoError as erro:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=str(erro),
+        )
+    except GatewayIndisponivelError as erro:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(erro),
+        )
+
+    "Salva no Banco"
     salvar_pagamento(db, resposta, request.descricao)
     return resposta
 
