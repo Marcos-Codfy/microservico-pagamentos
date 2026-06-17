@@ -1,73 +1,161 @@
 # 💳 Microserviço de Pagamentos
 
-API REST que simula o processamento de pagamentos com diferentes métodos
-(cartão de crédito, PIX, boleto), construída com **FastAPI** e seguindo
-princípios de **Clean Architecture**.
+[![CI - Microserviço de Pagamentos](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml/badge.svg)](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
+![Postgres](https://img.shields.io/badge/PostgreSQL-16-336791)
+![Tests](https://img.shields.io/badge/tests-19%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)
+
+API REST que processa pagamentos com diferentes métodos (cartão, PIX, boleto),
+construída com **FastAPI**, **PostgreSQL** e **Docker**, seguindo princípios de
+**Clean Architecture** e cobertura completa de testes automatizados.
+
+---
 
 ## 🎯 Objetivo
 
-Projeto acadêmico da disciplina de **Teste e Qualidade de Software**,
-desenvolvido para explorar:
+Projeto acadêmico da disciplina de **Teste e Qualidade de Software** (UniCatólica do Tocantins),
+desenvolvido para demonstrar uma abordagem profissional de qualidade de software:
 
-- Arquitetura limpa (separação em camadas).
-- Validação de dados com Pydantic.
-- Testes unitários com pytest aplicando BVA, Equivalence Partitioning
-  e Decision Table.
+- **Arquitetura Limpa** com separação clara de camadas.
+- **Testes unitários** com BVA, Equivalence Partitioning e Decision Tables.
+- **Testes de integração** com TestClient, mocks e banco real (não SQLite).
+- **Integração com serviço externo** via httpx, com tradução de erros HTTP.
+- **CI/CD** com GitHub Actions e Quality Gate de cobertura.
 
-## 🛠️ Tecnologias
+---
 
-| Ferramenta | Versão |
+## 🛠️ Stack
+
+| Categoria | Ferramenta |
 |---|---|
-| Python | 3.12 |
-| FastAPI | 0.115 |
-| Pydantic | 2.9 |
-| pytest | 8.3 |
-| httpx | 0.27 |
+| Linguagem | Python 3.12 |
+| Framework | FastAPI 0.115 |
+| Validação | Pydantic 2.9 |
+| ORM | SQLAlchemy 2.0 |
+| Banco | PostgreSQL 16 |
+| Cliente HTTP | httpx 0.27 |
+| Testes | pytest 8.3 + pytest-cov 5.0 |
+| Container | Docker + docker-compose |
+| CI/CD | GitHub Actions |
+
+---
+
+## 🏛️ Arquitetura
+
+```
+HTTP Request
+     │
+     ▼
+┌──────────────────────────────────────────┐
+│  app/api/        (camada de entrada)     │  ← traduz HTTP ↔ domínio
+├──────────────────────────────────────────┤
+│  app/core/       (regras de negócio)     │  ← código puro, sem I/O
+├──────────────────────────────────────────┤
+│  app/gateway/    (camada de borda)       │  ← chamada HTTP externa
+├──────────────────────────────────────────┤
+│  app/db/         (persistência)          │  ← SQLAlchemy + Postgres
+└──────────────────────────────────────────┘
+     │
+     ▼
+PostgreSQL  +  Fake Payment Gateway
+```
+
+**Princípios aplicados:**
+
+- **Separation of Concerns** — cada camada tem responsabilidade única.
+- **Anti-Corruption Layer (DDD)** — todo HTTP externo isolado em `app/gateway/`.
+- **DTO Pattern** — schemas Pydantic separados de modelos ORM.
+- **Repository Pattern** — `app/db/repositorio.py` abstrai acesso ao banco.
+- **Dependency Injection** — `Depends(get_db)` permite override em testes.
+
+---
 
 ## 📂 Estrutura do Projeto
 
 ```
 microservico-pagamentos/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                       # Pipeline CI/CD
 ├── app/
-│   ├── api/                # Camada externa: rotas HTTP
-│   │   └── routes_pagamento.py
-│   ├── core/               # Núcleo: regras de negócio puras
-│   │   ├── calculadora.py
-│   │   └── exceptions.py
-│   ├── schemas/            # Contratos de dados (DTOs)
-│   │   └── pagamento.py
-│   └── main.py             # Ponto de entrada da aplicação
-├── tests/                  # Testes unitários
-│   └── test_calculadora.py
-├── requirements.txt        # Dependências pinadas
-├── .gitignore
+│   ├── api/
+│   │   └── routes_pagamento.py          # Rotas HTTP (POST, GET)
+│   ├── core/
+│   │   ├── calculadora.py               # Regra de negócio pura
+│   │   ├── config.py                    # pydantic-settings
+│   │   └── exceptions.py                # Exceções do domínio
+│   ├── db/
+│   │   ├── database.py                  # Engine, sessão, get_db
+│   │   ├── models.py                    # Modelos ORM
+│   │   └── repositorio.py               # Operações de persistência
+│   ├── gateway/
+│   │   └── cliente.py                   # Cliente httpx com timeout
+│   ├── schemas/
+│   │   └── pagamento.py                 # DTOs Pydantic
+│   └── main.py                          # Bootstrap FastAPI
+├── fake_gateway/                        # Serviço externo simulado
+│   └── main.py
+├── tests/
+│   ├── conftest.py                      # Fixtures compartilhadas
+│   ├── test_calculadora.py              # 10 testes unitários
+│   └── test_pagamentos.py               # 9 testes de integração
+├── docker-compose.yml                   # Postgres + fake_gateway
+├── requirements.txt
 └── README.md
 ```
 
-## 🚀 Como rodar localmente
+---
 
-### 1. Pré-requisitos
+## 🚀 Como subir o ambiente
 
-- Python 3.12 instalado
-- Git instalado
+### Pré-requisitos
 
-### 2. Clonar e preparar o ambiente
+- Python 3.12
+- Docker e docker-compose
+- Git
+
+### 1. Clonar e preparar
 
 ```bash
-# Clonar o repositório
-git clone https://github.com/SEU-USUARIO/microservico-pagamentos.git
+git clone https://github.com/Marcos-Codfy/microservico-pagamentos.git
 cd microservico-pagamentos
 
-# Criar e ativar o ambiente virtual
+# Ambiente virtual
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 # source .venv/bin/activate     # Linux/Mac
 
-# Instalar dependências
+# Dependências
 pip install -r requirements.txt
 ```
 
-### 3. Subir a API
+### 2. Subir os containers (Postgres prod + Postgres test + fake_gateway)
+
+```bash
+docker compose up -d
+```
+
+Você terá 3 containers rodando:
+
+| Container | Porta | Função |
+|---|---|---|
+| `pagamentos_postgres_prod` | 5432 | Banco da aplicação |
+| `pagamentos_postgres_test` | 5433 | Banco efêmero para testes (tmpfs) |
+| `pagamentos_fake_gateway` | 8001 | Gateway de pagamento simulado |
+
+### 3. Configurar variáveis de ambiente
+
+Crie um `.env` na raiz baseado no `.env.example`:
+
+```env
+DATABASE_URL_PROD=postgresql+psycopg2://pagamentos:pagamentos@localhost:5432/pagamentos
+DATABASE_URL_TEST=postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
+GATEWAY_URL=http://localhost:8001
+```
+
+### 4. Subir a API
 
 ```bash
 uvicorn app.main:app --reload
@@ -75,182 +163,150 @@ uvicorn app.main:app --reload
 
 Acesse:
 
-- **API:** http://localhost:8000
-- **Documentação Swagger:** http://localhost:8000/docs
-- **Health Check:** http://localhost:8000/health
+- 📘 **Swagger:** http://localhost:8000/docs
+- 🩺 **Health Check:** http://localhost:8000/health
+
+---
 
 ## 🧪 Como rodar os testes
+
+### Todos os testes (unitários + integração)
 
 ```bash
 pytest -v
 ```
 
-Saída esperada:
+**Esperado:** 19 testes verdes.
 
-```
-tests/test_calculadora.py::test_cartao_a_vista_nao_aplica_juros PASSED
-tests/test_calculadora.py::test_cartao_12x_aplica_juros_no_limite_maximo PASSED
-tests/test_calculadora.py::test_pix_parcelado_lanca_pagamento_invalido_error PASSED
-tests/test_calculadora.py::test_cartao_3x_nao_aplica_juros PASSED
-tests/test_calculadora.py::test_cartao_4x_aplica_juros PASSED
-tests/test_calculadora.py::test_pix_a_vista_processa_normalmente PASSED
-tests/test_calculadora.py::test_boleto_a_vista_processa_normalmente PASSED
-tests/test_calculadora.py::test_boleto_parcelado_lanca_pagamento_invalido_error PASSED
-tests/test_calculadora.py::test_cartao_com_valor_decimal_calcula_corretamente PASSED
-tests/test_calculadora.py::test_arredondamento_aplica_round_half_up PASSED
+### Com cobertura
 
-============================== 10 passed ==============================
+```bash
+pytest --cov=app --cov-report=term-missing -v
 ```
 
-### Estratégia de cobertura
+**Cobertura atual:** 94%.
 
-Os testes aplicam três técnicas formais de teste caixa-preta:
+---
 
-- **Boundary Value Analysis (BVA):** testa os limites onde a regra
-  muda de comportamento (1x, 3x, 4x, 12x).
-- **Equivalence Partitioning:** cobre uma representante de cada
-  família de método (cartão, PIX, boleto).
-- **Decision Table:** combina método × faixa de parcelas garantindo
-  que nenhum cenário escape (válido ou inválido).
+## 📊 Endpoints
 
-## 📐 Endpoints
+| Método | Rota | Status codes possíveis | Descrição |
+|---|---|---|---|
+| `GET` | `/health` | 200 | Health check |
+| `POST` | `/pagamentos/` | 201, 402, 422, 503 | Cria pagamento |
+| `GET` | `/pagamentos/{id}` | 200, 404, 422 | Busca pagamento por ID |
 
-| Método | Rota          | Descrição                       | Status de sucesso |
-|--------|---------------|---------------------------------|-------------------|
-| GET    | `/health`     | Verifica se a aplicação está no ar | 200 OK            |
-| POST   | `/pagamentos/`| Cria um novo pagamento          | 201 Created       |
-
-### Exemplo: cartão em 3x (dentro da faixa sem juros)
+### Exemplo — POST `/pagamentos/`
 
 **Request:**
 
 ```json
-POST /pagamentos/
 {
-  "valor_total": 1000.00,
-  "parcelas": 3,
+  "valor_total": 1500.00,
+  "parcelas": 6,
   "metodo": "cartao_credito",
-  "descricao": "Cartão 3x sem juros"
+  "descricao": "Notebook Dell"
 }
 ```
 
-**Response (201 Created):**
+**Response 201:**
 
 ```json
 {
-  "id": "a37740a8-b71c-447b-bc77-4516418093e0",
-  "valor_total": "1000.00",
-  "valor_parcela": "333.33",
-  "parcelas": 3,
-  "juros_aplicado": "0.00",
-  "valor_final": "1000.00",
+  "id": "3f2a7b8c-...",
+  "valor_total": "1500.00",
+  "valor_parcela": "260.00",
+  "parcelas": 6,
+  "juros_aplicado": "60.00",
+  "valor_final": "1560.00",
   "metodo": "cartao_credito",
   "status": "aprovado",
-  "criado_em": "2026-06-09T17:30:00.123456Z"
+  "criado_em": "2026-06-16T18:30:00Z"
 }
 ```
 
-### Exemplo: cartão em 4x (primeira faixa com juros)
+### Significado dos status codes
 
-**Request:**
+| Código | Quando |
+|---|---|
+| `201` | Pagamento autorizado e persistido |
+| `402` | Gateway recusou o pagamento |
+| `422` | Regra de negócio violada (ex.: PIX parcelado) ou payload inválido |
+| `503` | Gateway externo indisponível ou timeout |
 
-```json
-POST /pagamentos/
-{
-  "valor_total": 1000.00,
-  "parcelas": 4,
-  "metodo": "cartao_credito",
-  "descricao": "Cartão 4x com juros"
-}
+---
+
+## 🧪 Estratégia de testes
+
+### Pirâmide de testes
+
+```
+        /\
+       /E2E\         (futuro)
+      /─────\
+     / inte- \       9 testes — TestClient + Postgres real + mock
+    /  gração \
+   /───────────\
+  /  unitários  \    10 testes — calculadora pura, função sem I/O
+ /───────────────\
 ```
 
-**Response (201 Created):**
+### Técnicas aplicadas
 
-```json
-{
-  "id": "b8c9d10e-f1g2-3h4i-5j6k-7l8m9n0o1p2q",
-  "valor_total": "1000.00",
-  "valor_parcela": "270.00",
-  "parcelas": 4,
-  "juros_aplicado": "80.00",
-  "valor_final": "1080.00",
-  "metodo": "cartao_credito",
-  "status": "aprovado",
-  "criado_em": "2026-06-09T17:30:00.123456Z"
-}
-```
+| Técnica | Onde |
+|---|---|
+| **Boundary Value Analysis (BVA)** | `test_cartao_12x_aplica_juros_no_limite_maximo` |
+| **Equivalence Partitioning** | `test_pix_parcelado_lanca_pagamento_invalido_error` |
+| **Decision Table** | Combinações de método × parcelas na calculadora |
+| **AAA Pattern** | Todos os testes (Arrange, Act, Assert) |
+| **Test Double (mock)** | Falhas do gateway via `unittest.mock.patch` |
+| **Fixtures encadeadas** | `engine_teste` → `db_session` → `client` |
 
-### Exemplo: regra de negócio violada (PIX parcelado)
+### Por que Postgres real nos testes (e não SQLite)
 
-**Request:**
+SQLite tem diferenças sutis de tipos, transações e constraints em relação ao Postgres.
+Teste passando em SQLite e quebrando em produção é o **anti-padrão clássico**.
+Por isso, usamos um Postgres dedicado (`tmpfs`) na porta 5433 — mesma engine que
+produção, rápido o suficiente pra rodar 19 testes em 1 segundo.
 
-```json
-POST /pagamentos/
-{
-  "valor_total": 500.00,
-  "parcelas": 3,
-  "metodo": "pix",
-  "descricao": "PIX inválido"
-}
-```
+---
 
-**Response (422 Unprocessable Entity):**
+## 🔄 CI/CD
 
-```json
-{
-  "detail": "O método pix não permite parcelamento. Use parcelas=1 ou escolha cartao_credito."
-}
-```
+A cada push em `main` ou branch `feature/**`, o GitHub Actions:
 
-## 📚 Regras de Negócio
+1. Sobe um Ubuntu fresh.
+2. Instala Python 3.12 com cache de dependências.
+3. Sobe um Postgres como service nativo do Actions.
+4. Sobe o `fake_gateway` em background.
+5. Roda `pytest --cov=app --cov-fail-under=70`.
+6. Falha se a cobertura cair abaixo de **70%**.
 
-- **Cartão de crédito 1x, 2x e 3x:** sem juros.
-- **Cartão de crédito 4x a 12x:** juros simples de 2% ao mês
-  (`juros = valor × 0,02 × parcelas`).
-- **PIX e Boleto:** somente à vista (1 parcela). Tentar parcelar
-  retorna HTTP 422 com mensagem da regra violada.
-- **Arredondamento monetário:** `ROUND_HALF_UP` em duas casas decimais
-  (padrão contábil brasileiro).
-- **Validações automáticas (Pydantic):**
-  - `valor_total > 0`
-  - `1 ≤ parcelas ≤ 12`
-  - `descricao` entre 3 e 200 caracteres
+**Quality Gate atual:** 70% mínimo, 94% praticado.
 
+---
 
-## 🐳 Como subir o ambiente (Docker)
+## 🤔 Decisões de design (trade-offs)
 
-O projeto usa 3 containers orquestrados via `docker-compose`:
-
-| Container | Porta (host) | Função |
+| Decisão | Alternativa descartada | Por quê |
 |---|---|---|
-| `postgres_prod` | 5432 | Banco de dados de produção (persistente) |
-| `postgres_test` | 5433 | Banco de testes (em RAM, auto-limpa) |
-| `fake_gateway` | 8001 | Simula gateway de pagamento externo |
+| Postgres real nos testes | SQLite em memória | Fidelidade com prod |
+| `uvicorn` background no CI | `docker compose up` no CI | Mais rápido, menos pontos de falha |
+| `from_attributes=True` no Pydantic | Conversão manual de ORM | Padrão da indústria FastAPI |
+| Conventional Commits em português | Inglês ou estilo livre | Consistência do projeto acadêmico |
+| Exceções de domínio em português | Em inglês | Espelha vocabulário do negócio |
+| `httpx` no cliente HTTP | `requests` | Permite migração futura pra async |
 
-### Pré-requisitos
-- Docker Desktop instalado e rodando
-- Arquivo `.env` criado a partir do `.env.example`
-
-### Subir todos os containers
-```bash
-docker compose up -d --build
-```
-
-### Verificar status
-```bash
-docker compose ps
-```
-
-### Acessar o fake-gateway
-- Swagger: http://localhost:8001/docs
-- Health: http://localhost:8001/health
-
-### Derrubar tudo
-```bash
-docker compose down
-```
+---
 
 ## 👤 Autor
 
-**Marcos Vinicius Muniz Arruda**  
-Projeto da disciplina de Teste e Qualidade de Software.
+**Marcos Cardoso** ([@Marcos-Codfy](https://github.com/Marcos-Codfy))
+Engenharia de Software — UniCatólica do Tocantins
+Disciplina: Teste e Qualidade de Software (2026)
+
+---
+
+## 📜 Licença
+
+Projeto acadêmico — uso livre para fins educacionais.
