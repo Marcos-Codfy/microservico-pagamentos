@@ -1,0 +1,18 @@
+# Aqui centralizamos config de ferramentas: pytest, ruff, bandit, mutmut, etc.
+
+
+[tool.pytest.ini_options]
+# Registra os markers usados nos testes. Sem registro, o pytest emite warning
+# ("PytestUnknownMarkWarning") quando você roda `pytest -m e2e`.
+# Registrar deixa explícito QUAIS markers o projeto reconhece — futuros devs
+# leem o pyproject e sabem quais suítes existem.
+
+markers = [
+    "e2e: testes end-to-end (sobem app + banco real + gateway real). Lentos"
+]
+
+#Padrão de descoberta de testes - o pytest já assume isso, mas declarar
+# explicitamente protege contra mudanças futuras de comportameto
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
