@@ -1,0 +1,38 @@
+# pyproject.toml
+# Arquivo de configuração padrão dos projetos Python modernos (PEP 518).
+# Aqui centralizamos config de ferramentas: pytest, ruff, bandit, mutmut, etc.
+# Substitui aos poucos arquivos antigos como pytest.ini, setup.cfg, .pylintrc.
+
+[tool.pytest.ini_options]
+# Registra os markers usados nos testes. Sem registro, o pytest emite warning
+# ("PytestUnknownMarkWarning") quando você roda `pytest -m e2e`.
+# Registrar deixa explícito QUAIS markers o projeto reconhece — futuros devs
+# leem o pyproject e sabem quais suítes existem.
+markers = [
+    "e2e: testes end-to-end (sobem app + banco real + gateway real). Lentos.",
+]
+
+# Padrão de descoberta de testes — o pytest já assume isso, mas declarar
+# explicitamente protege contra mudanças futuras de comportamento.
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+
+# ============================================================
+# Mutmut — testes de mutação (Lipton, 1971; Hovmöller, ~2017)
+# ============================================================
+[tool.mutmut]
+# Arquivo-alvo: SÓ a calculadora. Não vale a pena mutar config, ORM ou rota
+# (mutações geram falsos positivos onde não há lógica de negócio crítica).
+# Estratégia orientada a risco: mutamos onde mora o dinheiro.
+paths_to_mutate = "app/core/calculadora.py"
+
+# Como o mutmut roda os testes pra cada mutante.
+# - `-m "not e2e"`: pula E2E (lento e não exercita lógica pura da calculadora)
+# - `-x`: para na PRIMEIRA falha (mutmut só precisa saber se algum teste pegou)
+# - `-q`: output silencioso (cada mutante chama isso N vezes, queremos quieto)
+runner = "python -m pytest -m \"not e2e\" -x -q"
+
+# Pasta onde estão os testes que vão matar os mutantes.
+tests_dir = "tests/"
