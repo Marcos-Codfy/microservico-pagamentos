@@ -13,13 +13,13 @@ on:
 
 # Definição dos jobs (tarefas) do workflow
 jobs:
-  # Único job deste pipeline: rodar testes de unidade + integração com cobertura
+  # Único job deste pipeline: roda testes em 2 camadas (rápidos + E2E condicional)
   test:
     name: Rodar testes com cobertura
     runs-on: ubuntu-latest  # Máquina virtual Linux fornecida pelo GitHub
 
     # Serviços auxiliares: containers que sobem JUNTO com o job e somem no fim.
-    # Aqui pedimos um Postgres dedicado pros testes de integração rodarem
+    # Aqui pedimos um Postgres dedicado pros testes de integração e E2E rodarem
     # contra um banco real (não SQLite) — mesma engine usada em produção.
     services:
       postgres:
@@ -60,7 +60,6 @@ jobs:
           pip install -r requirements.txt
 
       # Passo 4: Instala as dependências do fake_gateway (FastAPI + uvicorn)
-      # Esses pacotes ficam num requirements separado dentro da pasta fake_gateway
       - name: Instalar dependências do fake_gateway
         run: pip install -r fake_gateway/requirements.txt
 
@@ -75,15 +74,25 @@ jobs:
           sleep 3
           curl -f http://localhost:8001/health
 
-      # Passo 6: Roda os testes com cobertura e Quality Gate
-      # - DATABASE_URL_* apontam pro Postgres do service acima
-      # - GATEWAY_URL aponta pro fake_gateway que subiu no passo 5
-      # - --cov=app  → mede cobertura da pasta app/
-      # - --cov-report=term-missing → mostra quais linhas NÃO foram testadas
-      # - --cov-fail-under=70 → Quality Gate: se cobertura < 70%, CI falha
-      - name: Rodar testes com pytest e cobertura
+      # Passo 6: Testes RÁPIDOS (unit + integração) com cobertura e Quality Gate.
+      # - `-m "not e2e"` exclui a suíte E2E (lenta) do loop rápido.
+      # - Cobertura é medida AQUI porque é o step que roda em todo evento.
+      # - --cov-fail-under=70 → Quality Gate: se cobertura < 70%, CI falha.
+      - name: Rodar testes rápidos (unit + integração) com cobertura
         env:
           DATABASE_URL_PROD: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
           DATABASE_URL_TEST: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
           GATEWAY_URL: http://localhost:8001
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70 -v
+        run: pytest -m "not e2e" --cov=app --cov-report=term-missing --cov-fail-under=70 -v
+
+      # Passo 7: Testes E2E — só rodam em PUSH para a main (merge final).
+      # - `if:` filtra: ignora pull_request e ignora pushes em feature/**.
+      # - Sem cobertura aqui (já medimos no passo 6).
+      # - Atravessa app + Postgres real (service) + fake_gateway real (Passo 5).
+      - name: Rodar testes E2E (gate antes da main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL_PROD: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
+          DATABASE_URL_TEST: postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
+          GATEWAY_URL: http://localhost:8001
+        run: pytest -m e2e -v
