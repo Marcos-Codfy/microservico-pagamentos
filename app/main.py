@@ -7,14 +7,18 @@ Este módulo:
 - Registra o middleware de Correlation ID.
 - Cria as tabelas no banco (idempotente).
 - Registra os routers do domínio.
+- Expõe o /health profundo (testa banco e gateway).
 """
 import logging
 
+import httpx
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api.routes_pagamento import router as pagamento_router
+from app.core.config import settings
 from app.db import models  # noqa: F401 — necessário pra registrar PagamentoDB no metadata
-from app.db.database import Base, engine
+from app.db.database import Base, engine, ping_db
 from app.observabilidade.logging_config import configure_logging
 from app.observabilidade.middleware import correlation_id_middleware
 
@@ -50,13 +54,65 @@ app.middleware("http")(correlation_id_middleware)
 app.include_router(pagamento_router)
 
 
-@app.get("/health", tags=["Infraestrutura"])
-def health_check() -> dict[str, str]:
+# ============================================================================
+# Health check profundo (Deep Health Check)
+# ============================================================================
+def _ping_gateway() -> bool:
     """
-    Endpoint de verificação de saúde (versão simples — será enriquecida
-    no Commit 4 com checks de banco e gateway).
+    Pinga o /health do fake_gateway via HTTP.
+
+    Timeout curto (2s): health check não pode demorar — orquestrador
+    aguarda no máximo poucos segundos antes de marcar o pod como doente.
     """
-    return {"status": "ok"}
+    try:
+        url = f"{settings.gateway_url}/health"
+        response = httpx.get(url, timeout=2.0)
+        return response.status_code == 200
+    except Exception as erro:
+        logger.warning("health.gateway.ping_falhou", extra={"motivo": str(erro)})
+        return False
+
+
+@app.get(
+    "/health",
+    tags=["Infraestrutura"],
+    summary="Deep health check (testa banco e gateway)",
+)
+def health_check() -> JSONResponse:
+    """
+    Verifica se a aplicação está pronta pra servir tráfego.
+
+    Testa as dependências críticas:
+    - database: SELECT 1 no Postgres
+    - gateway: GET /health no fake_gateway
+
+    Retorna:
+    - 200 OK    → todas as dependências OK
+    - 503       → uma ou mais dependências down (orquestrador retira
+                  esse pod do load balancer)
+
+    Padrão profissional: Liveness/Readiness Probe (Kubernetes / CNCF).
+    """
+    db_ok = ping_db()
+    gateway_ok = _ping_gateway()
+
+    checks = {
+        "database": "ok" if db_ok else "down",
+        "gateway": "ok" if gateway_ok else "down",
+    }
+
+    tudo_ok = db_ok and gateway_ok
+
+    if tudo_ok:
+        return JSONResponse(
+            status_code=200,
+            content={"status": "ok", "checks": checks},
+        )
+
+    return JSONResponse(
+        status_code=503,
+        content={"status": "degraded", "checks": checks},
+    )
 
 
 logger.info("app.startup.completo")
