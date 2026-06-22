@@ -1,312 +1,371 @@
 # 💳 Microserviço de Pagamentos
 
-[![CI - Microserviço de Pagamentos](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml/badge.svg)](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
-![Postgres](https://img.shields.io/badge/PostgreSQL-16-336791)
-![Tests](https://img.shields.io/badge/tests-19%20passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)
+> Microserviço acadêmico de processamento de pagamentos em Python/FastAPI, construído com **Clean Architecture**, **testes em múltiplas camadas** e **CI/CD profissional** como projeto da disciplina de Teste e Qualidade de Software (UniCatólica do Tocantins).
 
-API REST que processa pagamentos com diferentes métodos (cartão, PIX, boleto),
-construída com **FastAPI**, **PostgreSQL** e **Docker**, seguindo princípios de
-**Clean Architecture** e cobertura completa de testes automatizados.
+[![CI](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml/badge.svg)](https://github.com/Marcos-Codfy/microservico-pagamentos/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)
+![Mutation Score](https://img.shields.io/badge/mutation%20score-96%25-brightgreen)
 
 ---
 
-## 🎯 Objetivo
+## 📌 Sobre o projeto
 
-Projeto acadêmico da disciplina de **Teste e Qualidade de Software** (UniCatólica do Tocantins),
-desenvolvido para demonstrar uma abordagem profissional de qualidade de software:
+Este microserviço implementa o **processamento de pagamentos** (cartão de crédito, PIX e boleto) com cálculo de juros, validação de regras de negócio, persistência em PostgreSQL e integração com um gateway externo (simulado).
 
-- **Arquitetura Limpa** com separação clara de camadas.
-- **Testes unitários** com BVA, Equivalence Partitioning e Decision Tables.
-- **Testes de integração** com TestClient, mocks e banco real (não SQLite).
-- **Integração com serviço externo** via httpx, com tradução de erros HTTP.
-- **CI/CD** com GitHub Actions e Quality Gate de cobertura.
+O projeto serve a dois propósitos:
+
+1. **Acadêmico**: entregar uma aplicação real para a disciplina de Teste e Qualidade de Software, evidenciando aplicação prática de conceitos como BVA, Decision Tables, Pirâmide de Testes, Mutation Testing, CI/CD e Clean Architecture.
+2. **Portfólio profissional**: demonstrar habilidades de engenharia de software além de "código que funciona" — engenharia de qualidade aplicada do primeiro ao último commit.
+
+---
+
+## 🏗️ Arquitetura
+
+O projeto segue **Clean Architecture** (Robert C. Martin), com camadas isoladas por responsabilidade:
+
+```
+┌────────────────────────────────────────────────────┐
+│  API Layer (FastAPI routes)                        │
+│  app/api/routes_pagamento.py                       │
+│  → Recebe HTTP, valida payload, delega ao core     │
+├────────────────────────────────────────────────────┤
+│  Core / Domínio (lógica pura, sem framework)       │
+│  app/core/calculadora.py                           │
+│  app/core/exceptions.py                            │
+│  → Regras de negócio, cálculo de juros             │
+├────────────────────────────────────────────────────┤
+│  Schemas (Pydantic — validação e contratos)        │
+│  app/schemas/pagamento.py                          │
+├────────────────────────────────────────────────────┤
+│  Persistência (SQLAlchemy 2.0)                     │
+│  app/db/database.py, app/db/models.py              │
+│  → Conecta no Postgres, persiste agregados         │
+├────────────────────────────────────────────────────┤
+│  Gateway externo (cliente HTTP)                    │
+│  app/gateway/cliente.py                            │
+│  → Comunica com fake_gateway (simulação)           │
+└────────────────────────────────────────────────────┘
+```
+
+**Princípios aplicados:**
+
+- **SRP** (Single Responsibility Principle): cada módulo tem uma única razão pra mudar.
+- **DIP** (Dependency Inversion): a camada de domínio não conhece HTTP nem banco.
+- **Fail Fast**: regras violadas lançam exceções de domínio (`PagamentoInvalidoError`), capturadas pela camada de rota e traduzidas em HTTP apropriado.
+- **Anti-Corruption Layer**: a camada de rota traduz exceções de domínio em HTTP, isolando o core da web.
 
 ---
 
 ## 🛠️ Stack
 
-| Categoria | Ferramenta |
+| Camada | Tecnologia |
 |---|---|
-| Linguagem | Python 3.12 |
-| Framework | FastAPI 0.115 |
-| Validação | Pydantic 2.9 |
-| ORM | SQLAlchemy 2.0 |
-| Banco | PostgreSQL 16 |
-| Cliente HTTP | httpx 0.27 |
-| Testes | pytest 8.3 + pytest-cov 5.0 |
-| Container | Docker + docker-compose |
-| CI/CD | GitHub Actions |
+| Linguagem | **Python 3.12** |
+| Framework web | **FastAPI** |
+| ORM | **SQLAlchemy 2.0** |
+| Banco de dados | **PostgreSQL 16** |
+| Containerização | **Docker + Docker Compose** |
+| Testes unitários/integração | **pytest** + **pytest-cov** |
+| Testes E2E | **TestClient** + **uvicorn** em background |
+| Mutation testing | **mutmut 2.5** |
+| CI/CD | **GitHub Actions** |
+| Validação de schemas | **Pydantic v2** |
 
 ---
 
-## 🏛️ Arquitetura
-
-```
-HTTP Request
-     │
-     ▼
-┌──────────────────────────────────────────┐
-│  app/api/        (camada de entrada)     │  ← traduz HTTP ↔ domínio
-├──────────────────────────────────────────┤
-│  app/core/       (regras de negócio)     │  ← código puro, sem I/O
-├──────────────────────────────────────────┤
-│  app/gateway/    (camada de borda)       │  ← chamada HTTP externa
-├──────────────────────────────────────────┤
-│  app/db/         (persistência)          │  ← SQLAlchemy + Postgres
-└──────────────────────────────────────────┘
-     │
-     ▼
-PostgreSQL  +  Fake Payment Gateway
-```
-
-**Princípios aplicados:**
-
-- **Separation of Concerns** — cada camada tem responsabilidade única.
-- **Anti-Corruption Layer (DDD)** — todo HTTP externo isolado em `app/gateway/`.
-- **DTO Pattern** — schemas Pydantic separados de modelos ORM.
-- **Repository Pattern** — `app/db/repositorio.py` abstrai acesso ao banco.
-- **Dependency Injection** — `Depends(get_db)` permite override em testes.
-
----
-
-## 📂 Estrutura do Projeto
-
-```
-microservico-pagamentos/
-├── .github/
-│   └── workflows/
-│       └── ci.yml                       # Pipeline CI/CD
-├── app/
-│   ├── api/
-│   │   └── routes_pagamento.py          # Rotas HTTP (POST, GET)
-│   ├── core/
-│   │   ├── calculadora.py               # Regra de negócio pura
-│   │   ├── config.py                    # pydantic-settings
-│   │   └── exceptions.py                # Exceções do domínio
-│   ├── db/
-│   │   ├── database.py                  # Engine, sessão, get_db
-│   │   ├── models.py                    # Modelos ORM
-│   │   └── repositorio.py               # Operações de persistência
-│   ├── gateway/
-│   │   └── cliente.py                   # Cliente httpx com timeout
-│   ├── schemas/
-│   │   └── pagamento.py                 # DTOs Pydantic
-│   └── main.py                          # Bootstrap FastAPI
-├── fake_gateway/                        # Serviço externo simulado
-│   └── main.py
-├── tests/
-│   ├── conftest.py                      # Fixtures compartilhadas
-│   ├── test_calculadora.py              # 10 testes unitários
-│   └── test_pagamentos.py               # 9 testes de integração
-├── docker-compose.yml                   # Postgres + fake_gateway
-├── requirements.txt
-└── README.md
-```
-
----
-
-## 🚀 Como subir o ambiente
+## 🚀 Como rodar localmente
 
 ### Pré-requisitos
 
-- Python 3.12
-- Docker e docker-compose
-- Git
+- **Python 3.12** instalado
+- **Docker Desktop** instalado e rodando
+- **Git** instalado
 
-### 1. Clonar e preparar
+### 1. Clonar o repositório
 
 ```bash
 git clone https://github.com/Marcos-Codfy/microservico-pagamentos.git
 cd microservico-pagamentos
+```
 
-# Ambiente virtual
+### 2. Criar e ativar o ambiente virtual
+
+**Windows (PowerShell):**
+```powershell
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/Mac
+.\.venv\Scripts\Activate.ps1
+```
 
-# Dependências
+**Linux/Mac:**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Instalar dependências
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Subir os containers (Postgres prod + Postgres test + fake_gateway)
+### 4. Subir os serviços de infraestrutura
 
 ```bash
 docker compose up -d
 ```
 
-Você terá 3 containers rodando:
+Isso sobe **3 containers**:
 
 | Container | Porta | Função |
 |---|---|---|
-| `pagamentos_postgres_prod` | 5432 | Banco da aplicação |
-| `pagamentos_postgres_test` | 5433 | Banco efêmero para testes (tmpfs) |
-| `pagamentos_fake_gateway` | 8001 | Gateway de pagamento simulado |
+| `postgres_prod` | `5432` | Banco de produção/desenvolvimento |
+| `postgres_test` | `5433` | Banco de testes (com `tmpfs` pra velocidade) |
+| `fake_gateway` | `8001` | Gateway de pagamento simulado |
 
-### 3. Configurar variáveis de ambiente
+Confere que estão saudáveis:
 
-Crie um `.env` na raiz baseado no `.env.example`:
-
-```env
-DATABASE_URL_PROD=postgresql+psycopg2://pagamentos:pagamentos@localhost:5432/pagamentos
-DATABASE_URL_TEST=postgresql+psycopg2://pagamentos:pagamentos@localhost:5433/pagamentos_test
-GATEWAY_URL=http://localhost:8001
+```bash
+docker compose ps
 ```
 
-### 4. Subir a API
+Os 3 devem aparecer com status `Up (healthy)`.
+
+### 5. Subir a aplicação
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Acesse:
+A API estará disponível em **http://localhost:8000**.
 
-- 📘 **Swagger:** http://localhost:8000/docs
-- 🩺 **Health Check:** http://localhost:8000/health
+A **documentação interativa (Swagger)** fica em **http://localhost:8000/docs**.
 
 ---
 
 ## 🧪 Como rodar os testes
 
-### Todos os testes (unitários + integração)
+### Suite completa (rápido — exclui E2E)
 
 ```bash
-pytest -v
+pytest -m "not e2e" -v
 ```
 
-**Esperado:** 19 testes verdes.
-
-### Com cobertura
+### Apenas testes E2E
 
 ```bash
-pytest --cov=app --cov-report=term-missing -v
+pytest -m e2e -v
 ```
 
-**Cobertura atual:** 94%.
+### Todos os testes + relatório de cobertura
+
+```bash
+pytest --cov=app --cov-report=term-missing
+```
+
+### Mutation testing (calculadora)
+
+```bash
+# Limpar cache (recomendado entre execuções)
+rm .mutmut-cache       # Linux/Mac
+del .mutmut-cache      # Windows
+
+# Rodar (no Windows, antes setar encoding UTF-8)
+mutmut run
+```
+
+Gerar relatório HTML do mutmut:
+
+```bash
+mutmut html
+# Abre html/index.html no navegador
+```
 
 ---
 
-## 📊 Endpoints
+## 🧱 Estratégia de testes (risk-proportional testing)
 
-| Método | Rota | Status codes possíveis | Descrição |
-|---|---|---|---|
-| `GET` | `/health` | 200 | Health check |
-| `POST` | `/pagamentos/` | 201, 402, 422, 503 | Cria pagamento |
-| `GET` | `/pagamentos/{id}` | 200, 404, 422 | Busca pagamento por ID |
+A estratégia segue o princípio: **rigor de teste proporcional ao risco do componente**.
 
-### Exemplo — POST `/pagamentos/`
-
-**Request:**
-
-```json
-{
-  "valor_total": 1500.00,
-  "parcelas": 6,
-  "metodo": "cartao_credito",
-  "descricao": "Notebook Dell"
-}
-```
-
-**Response 201:**
-
-```json
-{
-  "id": "3f2a7b8c-...",
-  "valor_total": "1500.00",
-  "valor_parcela": "260.00",
-  "parcelas": 6,
-  "juros_aplicado": "60.00",
-  "valor_final": "1560.00",
-  "metodo": "cartao_credito",
-  "status": "aprovado",
-  "criado_em": "2026-06-16T18:30:00Z"
-}
-```
-
-### Significado dos status codes
-
-| Código | Quando |
-|---|---|
-| `201` | Pagamento autorizado e persistido |
-| `402` | Gateway recusou o pagamento |
-| `422` | Regra de negócio violada (ex.: PIX parcelado) ou payload inválido |
-| `503` | Gateway externo indisponível ou timeout |
-
----
-
-## 🧪 Estratégia de testes
-
-### Pirâmide de testes
-
-```
-        /\
-       /E2E\         (futuro)
-      /─────\
-     / inte- \       9 testes — TestClient + Postgres real + mock
-    /  gração \
-   /───────────\
-  /  unitários  \    10 testes — calculadora pura, função sem I/O
- /───────────────\
-```
-
-### Técnicas aplicadas
-
-| Técnica | Onde |
-|---|---|
-| **Boundary Value Analysis (BVA)** | `test_cartao_12x_aplica_juros_no_limite_maximo` |
-| **Equivalence Partitioning** | `test_pix_parcelado_lanca_pagamento_invalido_error` |
-| **Decision Table** | Combinações de método × parcelas na calculadora |
-| **AAA Pattern** | Todos os testes (Arrange, Act, Assert) |
-| **Test Double (mock)** | Falhas do gateway via `unittest.mock.patch` |
-| **Fixtures encadeadas** | `engine_teste` → `db_session` → `client` |
-
-### Por que Postgres real nos testes (e não SQLite)
-
-SQLite tem diferenças sutis de tipos, transações e constraints em relação ao Postgres.
-Teste passando em SQLite e quebrando em produção é o **anti-padrão clássico**.
-Por isso, usamos um Postgres dedicado (`tmpfs`) na porta 5433 — mesma engine que
-produção, rápido o suficiente pra rodar 19 testes em 1 segundo.
-
----
-
-## 🔄 CI/CD
-
-A cada push em `main` ou branch `feature/**`, o GitHub Actions:
-
-1. Sobe um Ubuntu fresh.
-2. Instala Python 3.12 com cache de dependências.
-3. Sobe um Postgres como service nativo do Actions.
-4. Sobe o `fake_gateway` em background.
-5. Roda `pytest --cov=app --cov-fail-under=70`.
-6. Falha se a cobertura cair abaixo de **70%**.
-
-**Quality Gate atual:** 70% mínimo, 94% praticado.
-
----
-
-## 🤔 Decisões de design (trade-offs)
-
-| Decisão | Alternativa descartada | Por quê |
+| Componente | Estratégia | Justificativa |
 |---|---|---|
-| Postgres real nos testes | SQLite em memória | Fidelidade com prod |
-| `uvicorn` background no CI | `docker compose up` no CI | Mais rápido, menos pontos de falha |
-| `from_attributes=True` no Pydantic | Conversão manual de ORM | Padrão da indústria FastAPI |
-| Conventional Commits em português | Inglês ou estilo livre | Consistência do projeto acadêmico |
-| Exceções de domínio em português | Em inglês | Espelha vocabulário do negócio |
-| `httpx` no cliente HTTP | `requests` | Permite migração futura pra async |
+| **Calculadora** (cálculo de juros) | Mutation testing + BVA + Decision Table | Lógica financeira; bugs aqui custam dinheiro real |
+| **Gateway externo** | Mocks (`unittest.mock.patch`) | Dependência externa volátil; isolar pra velocidade |
+| **Persistência** | Integração real com Postgres em container | Validar SQL/ORM contra banco real, não mock |
+| **Fluxo HTTP completo** | 1 teste E2E sem mocks | Validar montagem; rodar muitos E2E é lento e frágil |
+
+### Pirâmide de testes resultante
+
+```
+            ┌─────┐
+            │  1  │  E2E (fluxo completo sem mocks)
+            └─────┘
+         ┌──────────┐
+         │    9     │  Integração (HTTP + Postgres real + gateway mockado)
+         └──────────┘
+   ┌────────────────────┐
+   │         12         │  Unit (calculadora — Decimal puro)
+   └────────────────────┘
+```
+
+**Total: 22 testes**. Pirâmide saudável (mais base unit, topo enxuto).
+
+### Cobertura de testes (caixa-preta)
+
+Os testes unitários da calculadora aplicam **3 técnicas combinadas**:
+
+- **Boundary Value Analysis (BVA)**: fronteiras de juros (1x, 3x, 4x, 12x).
+- **Equivalence Partitioning**: pelo menos 1 representante de cada família (cartão / PIX / boleto).
+- **Decision Table**: combinação método × parcelas; nenhum combo válido ou inválido escapa.
+
+### Defesa contra mutação
+
+A calculadora é submetida ao **mutmut**, que introduz mutações no código e roda a suite pra ver se algum teste pega. Resultado atual:
+
+| Métrica | Valor |
+|---|---|
+| Mutantes gerados | 25 |
+| Mortos (caught by tests) | 24 |
+| Sobreviventes | 1 (mutante equivalente conhecido) |
+| **Mutation score** | **96%** |
+
+O único sobrevivente é uma mutação em string de construtor `Decimal` (`Decimal("XX0.02XX")`), uma **limitação documentada do mutmut 2.5** no Windows pra strings que lançam exceção no import. Não é um teste faltando — é um mutante equivalente.
+
+> 💡 **Frase pronta:** _Cobertura mede execução; mutação mede DETECÇÃO de bug. São métricas complementares — código pode ter 100% de cobertura e baixa detecção._
 
 ---
 
-## 👤 Autor
+## 🔁 CI/CD — Pipeline em camadas
 
-**Marcos Cardoso** ([@Marcos-Codfy](https://github.com/Marcos-Codfy))
-Engenharia de Software — UniCatólica do Tocantins
-Disciplina: Teste e Qualidade de Software (2026)
+O `.github/workflows/ci.yml` implementa **gate em camadas**, otimizando tempo de feedback:
+
+| Evento | O que roda | Por quê |
+|---|---|---|
+| **Pull Request** | Testes rápidos (`pytest -m "not e2e"`) + cobertura | Feedback em <2min pra dev iterar |
+| **Push em `main`** | Tudo acima + testes E2E | Gate completo só após PR aprovado |
+
+### Fluxo de trabalho do projeto
+
+1. Criar branch `feature/<nome-descritivo>` a partir de `main`.
+2. Commits atômicos com **Conventional Commits** em português.
+3. Push da branch e abrir PR para `main`.
+4. CI rápido roda automaticamente; corrigir se falhar.
+5. Merge no GitHub (preferindo **merge commit** pra preservar histórico).
+6. CI completo (incluindo E2E) roda em `main` após merge.
 
 ---
 
-## 📜 Licença
+## 📁 Estrutura do projeto
 
-Projeto acadêmico — uso livre para fins educacionais.
+```
+microservico-pagamentos/
+├── app/
+│   ├── api/
+│   │   └── routes_pagamento.py       # Endpoints HTTP
+│   ├── core/
+│   │   ├── calculadora.py            # Lógica de negócio pura
+│   │   └── exceptions.py             # Exceções de domínio
+│   ├── db/
+│   │   ├── database.py               # Configuração SQLAlchemy
+│   │   └── models.py                 # Modelos ORM
+│   ├── gateway/
+│   │   └── cliente.py                # Cliente HTTP do gateway
+│   ├── schemas/
+│   │   └── pagamento.py              # Schemas Pydantic
+│   └── main.py                       # Bootstrap FastAPI
+├── tests/
+│   ├── test_calculadora.py           # Unit (12 testes)
+│   ├── test_routes_pagamento.py      # Integração (9 testes)
+│   ├── test_e2e.py                   # E2E (1 teste)
+│   └── conftest.py                   # Fixtures compartilhadas
+├── fake_gateway/
+│   └── main.py                       # Gateway simulado
+├── .github/
+│   └── workflows/
+│       └── ci.yml                    # Pipeline GitHub Actions
+├── docker-compose.yml                # Infra local
+├── pyproject.toml                    # Config pytest + mutmut
+├── requirements.txt                  # Dependências
+└── README.md                         # Este arquivo
+```
+
+---
+
+## 📚 Endpoints disponíveis
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/pagamentos` | Cria um novo pagamento (cálculo + persistência + autorização) |
+| `GET` | `/pagamentos/{pagamento_id}` | Busca um pagamento pelo ID |
+| `GET` | `/health` | Health check da aplicação |
+
+### Exemplo de requisição
+
+```bash
+curl -X POST "http://localhost:8000/pagamentos" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "valor_total": "1000.00",
+    "parcelas": 4,
+    "metodo": "cartao_credito",
+    "descricao": "Notebook"
+  }'
+```
+
+### Exemplo de resposta
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "valor_total": "1000.00",
+  "valor_parcela": "270.00",
+  "parcelas": 4,
+  "juros_aplicado": "80.00",
+  "valor_final": "1080.00",
+  "metodo": "cartao_credito",
+  "status": "APROVADO",
+  "criado_em": "2026-06-22T14:30:00Z"
+}
+```
+
+---
+
+## 📐 Regras de negócio
+
+| Método | Parcelas permitidas | Juros |
+|---|---|---|
+| Cartão de crédito | 1 a 12 | Sem juros até 3x; juros simples de **2% × parcelas** a partir de 4x |
+| PIX | Apenas 1 | Nunca |
+| Boleto | Apenas 1 | Nunca |
+
+**Arredondamento:** todos os cálculos usam `Decimal` com `ROUND_HALF_UP` (padrão contábil brasileiro). **`float` nunca é usado para valores monetários.**
+
+---
+
+## 🗺️ Roadmap do projeto
+
+| Aula | Conteúdo | Status |
+|---|---|---|
+| Aula 1 | Setup do projeto, FastAPI, Clean Architecture | ✅ Concluída |
+| Aula 2 | Testes unitários (BVA, EP, AAA) + Docker + Testes de integração | ✅ Concluída |
+| Aula 3 | Testes E2E + Mutation Testing + CI em camadas | ✅ Concluída |
+| Aula 4 | Observabilidade (logs estruturados, healthcheck, métricas Prometheus) + 5 Quality Gates | 🚧 Em andamento |
+| Finalização | README + Relatório de Bugs Evitados + Apresentação | 🚧 Em andamento |
+
+---
+
+## 🎓 Sobre o autor
+
+**Marcos** ([@Marcos-Codfy](https://github.com/Marcos-Codfy))
+Estudante de Engenharia de Software — UniCatólica do Tocantins
+Projeto para a disciplina de **Teste e Qualidade de Software**
+
+---
+
+## 📝 Licença
+
+Este projeto é acadêmico e está disponível para fins educacionais.
