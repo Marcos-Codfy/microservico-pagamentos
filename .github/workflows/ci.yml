@@ -1,165 +1,115 @@
 name: CI/CD Pipeline
 
 on:
-push:
-branches: [main]
-pull_request:
-branches: [main]
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
+  lint_and_security:
+    name: Lint (Ruff) + Security (Bandit)
+    runs-on: ubuntu-latest
 
-# ==========================================================================
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-# JOB 1: Lint + Security (gates rápidos — falham primeiro)
+      - name: Configura Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-# ==========================================================================
+      - name: Instala ferramentas de qualidade
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff==0.6.9 bandit==1.7.10
 
-# Estratégia "fail-fast no barato": gates que rodam em segundos vêm antes
+      # GATE 4 - Lint: zero erros no Ruff.
+      - name: "Gate 4: Ruff (lint)"
+        run: ruff check app/ tests/
 
-# dos testes. Se o lint falhar, não faz sentido rodar toda a suíte.
+      # GATE 3 - Security: zero vulnerabilidade HIGH no Bandit.
+      - name: "Gate 3: Bandit (security)"
+        run: bandit -lll -r app/
 
-# ==========================================================================
+  tests:
+    name: Testes (unit + integracao + E2E) + Cobertura
+    runs-on: ubuntu-latest
+    needs: lint_and_security
 
-lint_and_security:
-name: Lint (Ruff) + Security (Bandit)
-runs-on: ubuntu-latest
+    services:
+      postgres_prod:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pagamentos_prod
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d pagamentos_prod"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
-```
-steps:
-  - name: Checkout do código
-    uses: actions/checkout@v4
+      postgres_test:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pagamentos_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d pagamentos_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
-  - name: Configura Python 3.12
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.12"
-      cache: "pip"
-
-  - name: Instala ferramentas de qualidade
-    run: |
-      python -m pip install --upgrade pip
-      pip install ruff==0.6.9 bandit==1.7.10
-
-  # GATE 4 — Lint: zero erros no Ruff.
-  - name: "Gate 4: Ruff (lint)"
-    run: ruff check app/ tests/
-
-  # GATE 3 — Security: zero vulnerabilidade HIGH no Bandit.
-  - name: "Gate 3: Bandit (security)"
-    run: bandit -lll -r app/
-```
-
-# ==========================================================================
-
-# JOB 2: Testes (unit + integração + E2E) + Cobertura
-
-# ==========================================================================
-
-# Replica a arquitetura local:
-
-# - postgres_prod (5432)
-
-# - postgres_test (5433)
-
-# - fake_gateway (8001)
-
-# ==========================================================================
-
-tests:
-name: Testes (unit + integração + E2E) + Cobertura
-runs-on: ubuntu-latest
-needs: lint_and_security
-
-```
-services:
-  postgres_prod:
-    image: postgres:16-alpine
     env:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: pagamentos_prod
-    ports:
-      - 5432:5432
-    options: >-
-      --health-cmd="pg_isready -U postgres -d pagamentos_prod"
-      --health-interval=10s
-      --health-timeout=5s
-      --health-retries=5
+      # Nomes batem EXATAMENTE com os campos do app/core/config.py
+      DATABASE_URL_PROD: "postgresql://postgres:postgres@localhost:5432/pagamentos_prod"
+      DATABASE_URL_TEST: "postgresql://postgres:postgres@localhost:5433/pagamentos_test"
+      GATEWAY_URL: "http://localhost:8001"
 
-  postgres_test:
-    image: postgres:16-alpine
-    env:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: pagamentos_test
-    ports:
-      - 5433:5432
-    options: >-
-      --health-cmd="pg_isready -U postgres -d pagamentos_test"
-      --health-interval=10s
-      --health-timeout=5s
-      --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-env:
-  # Mesmos nomes exigidos pelo app/core/config.py
-  DATABASE_URL_PROD: "postgresql://postgres:postgres@localhost:5432/pagamentos_prod"
-  DATABASE_URL_TEST: "postgresql://postgres:postgres@localhost:5433/pagamentos_test"
-  GATEWAY_URL: "http://localhost:8001"
+      - name: Configura Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-steps:
-  - name: Checkout do código
-    uses: actions/checkout@v4
+      - name: Instala dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r fake_gateway/requirements.txt
 
-  - name: Configura Python 3.12
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.12"
-      cache: "pip"
+      - name: Aguarda Postgres ficar saudavel
+        run: sleep 10
 
-  - name: Instala dependências
-    run: |
-      python -m pip install --upgrade pip
-      pip install -r requirements.txt
-      pip install -r fake_gateway/requirements.txt
+      - name: Sobe o fake_gateway em background
+        run: |
+          cd fake_gateway
+          nohup uvicorn main:app --host 0.0.0.0 --port 8001 > gateway.log 2>&1 &
+          sleep 5
+          curl --fail http://localhost:8001/health || (cat gateway.log && exit 1)
 
-  - name: Aguarda Postgres ficar saudável
-    run: |
-      sleep 10
+      # GATE 1 - Cobertura geral >= 70%
+      # GATE 5 - Zero testes pulados
+      - name: "Gates 1 e 5: Testes + Cobertura + Zero Skip"
+        run: |
+          pytest -v --strict-markers --cov=app --cov-report=term-missing --cov-fail-under=70 | tee pytest_output.txt
+          if grep -E "skipped|xfailed" pytest_output.txt; then
+            echo "::error::Gate 5 falhou - ha testes pulados."
+            exit 1
+          fi
 
-  - name: Sobe o fake_gateway em background
-    run: |
-      cd fake_gateway
-      nohup uvicorn main:app \
-        --host 0.0.0.0 \
-        --port 8001 \
-        > gateway.log 2>&1 &
-
-      sleep 5
-
-      curl --fail http://localhost:8001/health || \
-      (cat gateway.log && exit 1)
-
-  # GATE 1 — Cobertura geral >= 70%
-  # GATE 5 — Zero testes pulados
-  - name: "Gates 1 e 5: Testes + Cobertura + Zero Skip"
-    run: |
-      pytest -v \
-        --strict-markers \
-        --cov=app \
-        --cov-report=term-missing \
-        --cov-fail-under=70 \
-        | tee pytest_output.txt
-
-      if grep -E "skipped|xfailed" pytest_output.txt; then
-        echo "::error::Gate 5 falhou — há testes pulados."
-        exit 1
-      fi
-
-  # GATE 2 — Cobertura da calculadora >= 95%
-  - name: "Gate 2: Cobertura da calculadora >= 95%"
-    run: |
-      pytest tests/test_calculadora.py \
-        --cov=app.core.calculadora \
-        --cov-report=term-missing \
-        --cov-fail-under=95
-```
+      # GATE 2 - Cobertura da calculadora >= 95%
+      - name: "Gate 2: Cobertura da calculadora >= 95%"
+        run: pytest tests/test_calculadora.py --cov=app.core.calculadora --cov-report=term-missing --cov-fail-under=95
