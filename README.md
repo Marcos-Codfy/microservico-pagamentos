@@ -346,17 +346,65 @@ curl -X POST "http://localhost:8000/pagamentos" \
 
 ---
 
-## 🗺️ Roadmap do projeto
+## 📊 Observabilidade
 
-| Aula | Conteúdo | Status |
+A aplicação implementa os **3 pilares da observabilidade moderna**
+(Charity Majors, *Observability Engineering*):
+
+| Pilar | Implementação | Endpoint / Saída |
 |---|---|---|
-| Aula 1 | Setup do projeto, FastAPI, Clean Architecture | ✅ Concluída |
-| Aula 2 | Testes unitários (BVA, EP, AAA) + Docker + Testes de integração | ✅ Concluída |
-| Aula 3 | Testes E2E + Mutation Testing + CI em camadas | ✅ Concluída |
-| Aula 4 | Observabilidade (logs estruturados, healthcheck, métricas Prometheus) + 5 Quality Gates | 🚧 Em andamento |
-| Finalização | README + Relatório de Bugs Evitados + Apresentação | 🚧 Em andamento |
+| **Logs estruturados** | JSON via `python-json-logger`, com `request_id` único por request | `stdout` (capturável por agentes como Fluentd, Vector) |
+| **Métricas** | `prometheus-client` com Counter (`http_requests_total`) e Histogram (`http_request_duration_seconds`), labels por método/rota/status | `GET /metrics` |
+| **Health check profundo** | Testa Postgres (`SELECT 1`) e fake_gateway (`GET /health`) em cada chamada | `GET /health` |
+
+### Como ver na prática
+
+```bash
+# Sobe a stack
+docker compose up -d
+
+# Gera tráfego
+curl http://localhost:8000/health
+curl http://localhost:8000/pagamentos/nao-eh-uuid
+
+# Vê as métricas no formato Prometheus
+curl http://localhost:8000/metrics
+
+# Vê logs JSON estruturados
+docker compose logs api | grep request_id
+```
+
+### Correlation ID
+
+Cada request HTTP gera um `request_id` (UUID v4) propagado em:
+- Cada log emitido durante a request
+- Header `X-Request-ID` da response
+- Chamadas ao gateway externo (header `X-Request-ID` repassado)
+
+Em produção, isso permite rastrear o pedido inteiro entre múltiplos serviços
+com `grep "request_id=abc-123"`.
 
 ---
+
+## 🛡️ Quality Gates (CI)
+
+O pipeline de CI implementa **5 portões em camadas**
+(Martin Fowler, *Continuous Integration*):
+
+| # | Gate | Critério | Defende contra |
+|---|---|---|---|
+| 1 | **Cobertura geral** | `≥ 70%` | Código novo sem teste |
+| 2 | **Cobertura calculadora** | `≥ 95%` | Regra de negócio crítica (dinheiro!) sem teste forte |
+| 3 | **Bandit (security)** | Zero HIGH severity | Vulnerabilidade conhecida (SQL injection, eval, etc) |
+| 4 | **Ruff (lint)** | Zero erros | Imports não usados, código fora do PEP-8 |
+| 5 | **Zero `skipped`** | Nenhum teste pulado | Teste "esquecido" no main |
+
+> **Por que múltiplas camadas?** Cobertura sozinha é cega — ela só prova que
+> o código foi executado, não que o teste pega bug. Cada gate defende contra
+> uma classe específica de defeito. Quebrar **um só** já bloqueia o merge.
+
+Ver `RELATORIO_BUGS_EVITADOS.md` para os casos reais capturados durante o
+desenvolvimento.
 
 ## 🎓 Sobre o autor
 
