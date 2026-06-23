@@ -4,9 +4,9 @@ Ponto de entrada da aplicação FastAPI.
 Este módulo:
 - Configura o logging estruturado (uma vez, no startup).
 - Cria a instância FastAPI.
-- Registra o middleware de Correlation ID.
+- Registra os middlewares (Correlation ID + Métricas).
 - Cria as tabelas no banco (idempotente).
-- Registra os routers do domínio.
+- Registra os routers do domínio e de infraestrutura.
 - Expõe o /health profundo (testa banco e gateway).
 """
 import logging
@@ -20,7 +20,9 @@ from app.core.config import settings
 from app.db import models  # noqa: F401 — necessário pra registrar PagamentoDB no metadata
 from app.db.database import Base, engine, ping_db
 from app.observabilidade.logging_config import configure_logging
+from app.observabilidade.metrics import metrics_middleware
 from app.observabilidade.middleware import correlation_id_middleware
+from app.observabilidade.routes_metrics import router as metrics_router
 
 # ============================================================================
 # Logging — configurado ANTES de qualquer outra coisa que possa logar.
@@ -46,12 +48,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Middleware: cross-cutting concern (correlation ID + log de request).
-# Registrado ANTES dos routers — assim envelopa toda request.
+# Middlewares: cross-cutting concerns. Registrados ANTES dos routers.
+# Ordem de declaração importa: o ÚLTIMO registrado é o MAIS EXTERNO
+# (executa primeiro no request, último no response).
 app.middleware("http")(correlation_id_middleware)
+app.middleware("http")(metrics_middleware)
 
-# Routers de domínio.
+# Routers — domínio + infraestrutura.
 app.include_router(pagamento_router)
+app.include_router(metrics_router)
 
 
 # ============================================================================
