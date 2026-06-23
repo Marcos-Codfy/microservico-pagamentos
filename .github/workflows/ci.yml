@@ -26,9 +26,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff==0.6.9 bandit==1.7.10
 
+      # GATE 4 - Lint: zero erros no Ruff.
       - name: "Gate 4: Ruff (lint)"
         run: ruff check app/ tests/
 
+      # GATE 3 - Security: zero vulnerabilidade HIGH no Bandit.
       - name: "Gate 3: Bandit (security)"
         run: bandit -lll -r app/
 
@@ -67,6 +69,7 @@ jobs:
           --health-retries=5
 
     env:
+      # Nomes batem EXATAMENTE com os campos do app/core/config.py
       DATABASE_URL_PROD: "postgresql://postgres:postgres@localhost:5432/pagamentos_prod"
       DATABASE_URL_TEST: "postgresql://postgres:postgres@localhost:5433/pagamentos_test"
       GATEWAY_URL: "http://localhost:8001"
@@ -97,13 +100,16 @@ jobs:
           sleep 5
           curl --fail http://localhost:8001/health || (cat gateway.log && exit 1)
 
+      # GATE 1 - Cobertura geral >= 70%
+      # GATE 5 - Zero testes pulados
       - name: "Gates 1 e 5: Testes + Cobertura + Zero Skip"
         run: |
           pytest -v --strict-markers --cov=app --cov-report=term-missing --cov-fail-under=70 | tee pytest_output.txt
           if grep -E "skipped|xfailed" pytest_output.txt; then
-            echo "::error::Gate 5 falhou — ha testes pulados."
+            echo "::error::Gate 5 falhou - ha testes pulados."
             exit 1
           fi
 
+      # GATE 2 - Cobertura da calculadora >= 95%
       - name: "Gate 2: Cobertura da calculadora >= 95%"
         run: pytest tests/test_calculadora.py --cov=app.core.calculadora --cov-report=term-missing --cov-fail-under=95
